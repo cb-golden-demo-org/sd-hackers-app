@@ -338,7 +338,7 @@ jobs:
           application-name: sd-hackers-app
           environment-name: sd-hackers-qa
           flag-name: default.score
-          use-org-as-app: true
+          use-org-as-app: false
           flag-config: |
             enabled: true
             defaultValue: true
@@ -672,7 +672,7 @@ jobs:
           application-name: sd-hackers-app
           environment-name: sd-hackers-staging
           flag-name: default.score
-          use-org-as-app: true
+          use-org-as-app: false
           flag-config: |
             enabled: true
             defaultValue: true
@@ -1217,7 +1217,7 @@ jobs:
           application-name: sd-hackers-app
           environment-name: sd-hackers-prod
           flag-name: default.score
-          use-org-as-app: true
+          use-org-as-app: false
           flag-config: |
             enabled: true
             defaultValue:
