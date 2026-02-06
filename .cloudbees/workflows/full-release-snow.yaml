@@ -39,7 +39,7 @@ metadata:
         - wait-for-snow-change-request
         - deploy-to-prod
         - run-smoke-tests
-        - roll-out-feature-flags
+        # - roll-out-feature-flags
 jobs:
   create-release-issue:
     outputs:
@@ -337,7 +337,7 @@ jobs:
           application-name: sd-hackers-app
           environment-name: sd-hackers-qa
           flag-name: default.score
-          use-org-as-app: true
+          use-org-as-app: false
           flag-config: |
             enabled: true
             defaultValue: true
@@ -671,7 +671,7 @@ jobs:
           application-name: sd-hackers-app
           environment-name: sd-hackers-staging
           flag-name: default.score
-          use-org-as-app: true
+          use-org-as-app: false
           flag-config: |
             enabled: true
             defaultValue: true
@@ -1184,54 +1184,54 @@ jobs:
 
             **Production Smoke Tests**: PASSED - System ready for traffic
           format: MARKDOWN
-  roll-out-feature-flags:
-    environment: sd-hackers-prod
-    needs:
-      - run-smoke-tests
-    steps:
-      - name: Get current time
-        id: current-time
-        uses: docker://alpine:3.20
-        run: >
-          echo "$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")" > $CLOUDBEES_OUTPUTS/now
+  # roll-out-feature-flags:
+  #   environment: sd-hackers-prod
+  #   needs:
+  #     - run-smoke-tests
+  #   steps:
+  #     - name: Get current time
+  #       id: current-time
+  #       uses: docker://alpine:3.20
+  #       run: >
+  #         echo "$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")" > $CLOUDBEES_OUTPUTS/now
 
-          echo "$(date -u -d "@$(( $(date +%s) + 3600 ))"
-          +%Y-%m-%dT%H:%M:%S.000Z)" > $CLOUDBEES_OUTPUTS/one-hour
+  #         echo "$(date -u -d "@$(( $(date +%s) + 3600 ))"
+  #         +%Y-%m-%dT%H:%M:%S.000Z)" > $CLOUDBEES_OUTPUTS/one-hour
 
-          echo "$(date -u -d "@$(( $(date +%s) + 7200 ))"
-          +%Y-%m-%dT%H:%M:%S.000Z)" > $CLOUDBEES_OUTPUTS/two-hours
-      - name: Roll out flags on schedule
-        uses: https://github.com/cloudbees-days/fm-update-flag
-        id: config-update
-        with:
-          token: ${{ secrets.UNIFY_TOKEN }}
-          org-id: "e8854086-415f-4497-a717-522d5a8af4f8"
-          application-name: sd-hackers-app
-          environment-name: sd-hackers-prod
-          flag-name: default.score
-          use-org-as-app: true
-          flag-config: |
-            enabled: true
-            defaultValue:
-            - from: ${{ steps.current-time.outputs.now }}
-              percentage: 10
-            - from: ${{ steps.current-time.outputs.one-hour }}
-              percentage: 50
-            - from: ${{ steps.current-time.outputs.two-hours }}
-              percentage: 100
-      - name: Publish evidence
-        uses: cloudbees-io/publish-evidence-item@v1
-        with:
-          content: |-
-            ## Flag Configuration Updated
+  #         echo "$(date -u -d "@$(( $(date +%s) + 7200 ))"
+  #         +%Y-%m-%dT%H:%M:%S.000Z)" > $CLOUDBEES_OUTPUTS/two-hours
+  #     - name: Roll out flags on schedule
+  #       uses: https://github.com/cloudbees-days/fm-update-flag
+  #       id: config-update
+  #       with:
+  #         token: ${{ secrets.UNIFY_TOKEN }}
+  #         org-id: "e8854086-415f-4497-a717-522d5a8af4f8"
+  #         application-name: sd-hackers-app
+  #         environment-name: sd-hackers-prod
+  #         flag-name: default.score
+  #         use-org-as-app: false
+  #         flag-config: |
+  #           enabled: true
+  #           defaultValue:
+  #           - from: ${{ steps.current-time.outputs.now }}
+  #             percentage: 10
+  #           - from: ${{ steps.current-time.outputs.one-hour }}
+  #             percentage: 50
+  #           - from: ${{ steps.current-time.outputs.two-hours }}
+  #             percentage: 100
+  #     - name: Publish evidence
+  #       uses: cloudbees-io/publish-evidence-item@v1
+  #       with:
+  #         content: |-
+  #           ## Flag Configuration Updated
 
-            **Flag ID:** ${{ steps.config-update.outputs.flag-id }}
-            **Update Success:** ${{ steps.config-update.outputs.success }}
+  #           **Flag ID:** ${{ steps.config-update.outputs.flag-id }}
+  #           **Update Success:** ${{ steps.config-update.outputs.success }}
 
-            **Applied Configuration:**
-            ```json
-            ${{ steps.config-update.outputs.configuration }}
-            ```
+  #           **Applied Configuration:**
+  #           ```json
+  #           ${{ steps.config-update.outputs.configuration }}
+  #           ```
 
-            ✅ Flag configuration update successful
-          format: MARKDOWN
+  #           ✅ Flag configuration update successful
+  #         format: MARKDOWN
