@@ -367,26 +367,23 @@ jobs:
     secrets: inherit
     vars: inherit
   enable-snkrs-flags-qa:
-    environment: sd-hackers-qa
     needs:
       - deploy-snkrs-to-qa
+    environment: sd-hackers-qa
     steps:
-      - name: Enable SNKRS launch experience in QA
-        uses: https://github.com/cloudbees-days/fm-update-flag
-        id: config-update
-        with:
+      - with:
           token: ${{ secrets.UNIFY_TOKEN }}
           org-id: e8854086-415f-4497-a717-522d5a8af4f8
           application-name: sd-hackers-app
           environment-name: sd-hackers-qa
-          flag-name: snkrs.limited.drop
-          use-org-as-app: false
+          flag-name: default.score
           flag-config: |
             enabled: true
             defaultValue: true
-      - name: Publish QA flag evidence
-        uses: cloudbees-io/publish-evidence-item@v1
-        with:
+        uses: https://github.com/cloudbees-days/fm-update-flag
+        name: Enable SNKRS launch experience in QA
+        id: config-update
+      - with:
           format: MARKDOWN
           content: |-
             # QA Feature Flag Evidence
@@ -394,6 +391,8 @@ jobs:
             **Flag:** snkrs.limited.drop  
             **Environment:** QA  
             **Update Success:** ${{ steps.config-update.outputs.success }}
+        uses: cloudbees-io/publish-evidence-item@v1
+        name: Publish QA flag evidence
   validate-consumer-journey-qa:
     environment: sd-hackers-qa
     needs:
@@ -457,23 +456,22 @@ jobs:
     secrets: inherit
     vars: inherit
   enable-snkrs-flags-staging:
-    environment: sd-hackers-staging
     needs:
       - deploy-to-staging
+    environment: sd-hackers-staging
     steps:
-      - name: Enable SNKRS launch experience in staging
-        uses: https://github.com/cloudbees-days/fm-update-flag
-        id: config-update
-        with:
+      - with:
           token: ${{ secrets.UNIFY_TOKEN }}
           org-id: e8854086-415f-4497-a717-522d5a8af4f8
           application-name: sd-hackers-app
           environment-name: sd-hackers-staging
-          flag-name: snkrs.limited.drop
-          use-org-as-app: false
+          flag-name: default.score
           flag-config: |
             enabled: true
             defaultValue: true
+        uses: https://github.com/cloudbees-days/fm-update-flag
+        name: Enable SNKRS launch experience in staging
+        id: config-update
       - name: Publish staging flag evidence
         uses: cloudbees-io/publish-evidence-item@v1
         with:
@@ -545,63 +543,59 @@ jobs:
     secrets: inherit
     vars: inherit
   progressive-snkrs-rollout:
-    environment: sd-hackers-prod
     needs:
       - deploy-to-prod
+    environment: sd-hackers-prod
     outputs:
       rollout-status: ${{ steps.rollout.outputs.status }}
     steps:
-      - name: Progressive rollout - 1 percent
-        uses: https://github.com/cloudbees-days/fm-update-flag
-        id: rollout-1
-        with:
+      - with:
           token: ${{ secrets.UNIFY_TOKEN }}
           org-id: e8854086-415f-4497-a717-522d5a8af4f8
           application-name: sd-hackers-app
           environment-name: sd-hackers-prod
-          flag-name: snkrs.limited.drop
-          use-org-as-app: false
+          flag-name: default.score
           flag-config: |
             enabled: true
             defaultValue: false
             targeting:
               percentage: 1
-      - name: Monitor launch health at 1 percent
-        uses: docker://alpine:3.20
-        run: |
+        uses: https://github.com/cloudbees-days/fm-update-flag
+        name: Progressive rollout - 1 percent
+        id: rollout-1
+      - run: |
           echo "Monitoring conversion, checkout errors, API latency, and inventory sync at 1%."
           sleep 3
           echo "Health OK."
-      - name: Progressive rollout - 5 percent
-        uses: https://github.com/cloudbees-days/fm-update-flag
-        id: rollout-5
-        with:
+        uses: docker://alpine:3.20
+        name: Monitor launch health at 1 percent
+      - with:
           token: ${{ secrets.UNIFY_TOKEN }}
           org-id: e8854086-415f-4497-a717-522d5a8af4f8
           application-name: sd-hackers-app
           environment-name: sd-hackers-prod
-          flag-name: snkrs.limited.drop
-          use-org-as-app: false
+          flag-name: default.score
           flag-config: |
             enabled: true
             defaultValue: false
             targeting:
               percentage: 5
-      - name: Monitor launch health at 5 percent
-        uses: docker://alpine:3.20
-        run: |
+        uses: https://github.com/cloudbees-days/fm-update-flag
+        name: Progressive rollout - 5 percent
+        id: rollout-5
+      - run: |
           echo "Monitoring conversion, checkout errors, API latency, and inventory sync at 5%."
           sleep 3
           echo "Health OK."
-      - name: Progressive rollout complete
-        id: rollout
         uses: docker://alpine:3.20
-        run: |
+        name: Monitor launch health at 5 percent
+      - run: |
           echo "CONTROLLED" > $CLOUDBEES_OUTPUTS/status
           echo "Progressive rollout controlled through CloudBees Feature Management."
-      - name: Publish progressive rollout evidence
-        uses: cloudbees-io/publish-evidence-item@v1
-        with:
+        uses: docker://alpine:3.20
+        name: Progressive rollout complete
+        id: rollout
+      - with:
           format: MARKDOWN
           content: |
             # Progressive Rollout Evidence
@@ -611,6 +605,8 @@ jobs:
             **Status:** ${{ steps.rollout.outputs.status }}
 
             This demonstrates how Nike can replace manual launch scripts and reduce LaunchDarkly dependency with CloudBees Feature Management.
+        uses: cloudbees-io/publish-evidence-item@v1
+        name: Publish progressive rollout evidence
   launch-health-check:
     environment: sd-hackers-prod
     needs:
