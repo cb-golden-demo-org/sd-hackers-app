@@ -16,8 +16,6 @@ on:
         type: string
         default: SNKRS Limited Drop
         description: Business launch or release event name.
-      flag-ids:
-        type: string
 metadata:
   stages/v1alpha1:
     - name: Release Readiness
