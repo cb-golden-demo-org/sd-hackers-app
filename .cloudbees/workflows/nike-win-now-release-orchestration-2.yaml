@@ -1,0 +1,677 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: Nike Win Now Release Orchestration
+on:
+  workflow_dispatch:
+    inputs:
+      manifest:
+        type: string
+        required: true
+        description: System-generated application release manifest.
+      release_window:
+        type: string
+        required: false
+        default: Tuesday 3:00-4:00 PM PST
+        description: Nike release window for the launch.
+      launch_event:
+        type: string
+        required: false
+        default: SNKRS Limited Drop
+        description: Business launch or release event name.
+metadata:
+  stages/v1alpha1:
+    - name: Release Readiness
+      jobs:
+        - create-win-now-release-record
+        - gather-release-evidence
+        - quality-and-security-checks
+        - notify-release-war-room
+        - release-manager-approval
+    - name: SAP Readiness
+      jobs:
+        - sap-window-check
+        - sap-clean-core
+        - inventory-check
+        - sap-charm-xport
+        - inventory-unlock
+    - name: Digital QA
+      jobs:
+        - deploy-snkrs-to-qa
+        - enable-snkrs-flags-qa
+        - validate-consumer-journey-qa
+        - qa-exit-criteria
+    - name: Launch Rehearsal
+      jobs:
+        - deploy-to-staging
+        - enable-snkrs-flags-staging
+        - run-launch-rehearsal
+        - prod-ready-approval
+    - name: Production Drop
+      jobs:
+        - sn-change-approval
+        - deploy-to-prod
+        - progressive-snkrs-rollout
+        - launch-health-check
+        - launch-retro
+jobs:
+  create-win-now-release-record:
+    outputs:
+      issue-key: ${{ steps.create-release-issue.outputs.issue-key }}
+      issue-url: ${{ steps.create-release-issue.outputs.issue-url }}
+    steps:
+      - name: Create Nike Win Now release issue
+        id: create-release-issue
+        uses: https://github.com/cloudbees-days/jira-create-issue
+        with:
+          jira-url: ${{ secrets.JIRA_URL }}
+          jira-username: ${{ secrets.JIRA_USERNAME }}
+          jira-token: ${{ secrets.JIRA_TOKEN }}
+          project-key: CBDEMO
+          issue-type: Task
+          issue-fields: |
+            summary: "Nike Win Now Release - ${{ inputs.launch_event }} #${{ cloudbees.run_number }}"
+            description: |
+              Coordinated enterprise release for Nike Win Now.
+
+              Release event: ${{ inputs.launch_event }}
+              Release window: ${{ inputs.release_window }}
+
+              Components:
+              - SNKRS Mobile Experience
+              - Inventory API
+              - Order Capture Service
+              - SAP S/4 Inventory Readiness
+              - Warehouse Fulfillment Coordination
+      - name: Publish release record evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |-
+            # Nike Win Now Release Record
+
+            **Release Event:** ${{ inputs.launch_event }}
+            **Release Window:** ${{ inputs.release_window }}
+            **Release Issue:** ${{ steps.create-release-issue.outputs.issue-key }}
+            **Issue URL:** ${{ steps.create-release-issue.outputs.issue-url }}
+
+            This release record ties digital launch readiness to SAP inventory readiness and enterprise change control.
+  gather-release-evidence:
+    needs:
+      - create-win-now-release-record
+    outputs:
+      release-table: ${{ steps.format-release-plan.outputs.release-table }}
+    steps:
+      - name: Gather release plan from Jira
+        id: get-release-items
+        uses: https://github.com/cloudbees-days/jira-get-issues
+        with:
+          jira-url: ${{ secrets.JIRA_URL }}
+          jira-username: ${{ secrets.JIRA_USERNAME }}
+          jira-token: ${{ secrets.JIRA_TOKEN }}
+          jql: project = "UDEMO" AND status != "Done" ORDER BY priority DESC, created DESC
+          fields: summary,status,assignee,priority,created
+          max-results: "20"
+      - name: Checkout digital components
+        uses: https://github.com/cloudbees-io/checkout@v1
+        id: checkout-snkrs-web
+        with:
+          repository: cb-golden-demo-org/sd-hackers-web
+      - name: Checkout API components
+        uses: https://github.com/cloudbees-io/checkout@v1
+        id: checkout-inventory-api
+        with:
+          repository: cb-golden-demo-org/sd-hackers-api
+      - name: Format release plan
+        id: format-release-plan
+        uses: docker://alpine:3.20
+        run: |
+          apk add --no-cache jq
+
+          echo 'release-table<<EOF' >> $CLOUDBEES_OUTPUTS/release-table
+          echo '| Component | Owner | Status | Dependency |' >> $CLOUDBEES_OUTPUTS/release-table
+          echo '|-----------|-------|--------|------------|' >> $CLOUDBEES_OUTPUTS/release-table
+          echo '| SNKRS Mobile Experience | Digital Team | Ready | Inventory API |' >> $CLOUDBEES_OUTPUTS/release-table
+          echo '| Inventory API | Platform Team | Ready | SAP S/4 Inventory Unlock |' >> $CLOUDBEES_OUTPUTS/release-table
+          echo '| SAP S/4 Inventory | SAP Application Engineering | Pending | CHaRM Transport |' >> $CLOUDBEES_OUTPUTS/release-table
+          echo '| Warehouse Fulfillment | Enterprise Systems | Ready | Inventory Availability |' >> $CLOUDBEES_OUTPUTS/release-table
+          echo 'EOF' >> $CLOUDBEES_OUTPUTS/release-table
+      - name: Publish release evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # Release Evidence Package
+
+            ## Release Record
+            ${{ needs.create-win-now-release-record.outputs.issue-key }}
+            ${{ needs.create-win-now-release-record.outputs.issue-url }}
+
+            ## Cross-Team Release Plan
+            ${{ steps.format-release-plan.outputs.release-table }}
+
+            ## Source Evidence
+            - SNKRS Web Commit: ${{ steps.checkout-snkrs-web.outputs.commit-url }}
+            - Inventory API Commit: ${{ steps.checkout-inventory-api.outputs.commit-url }}
+  quality-and-security-checks:
+    needs:
+      - gather-release-evidence
+    outputs:
+      launch-risk: ${{ steps.launch-risk.outputs.risk }}
+      security-status: ${{ steps.security-check.outputs.status }}
+    steps:
+      - name: Security and compliance checks
+        id: security-check
+        uses: docker://alpine:3.20
+        run: |
+          echo "Running security and compliance checks for Nike launch components..."
+          sleep 2
+          echo "PASSED" > $CLOUDBEES_OUTPUTS/status
+          echo "Security posture: PASSED"
+          echo "Critical vulnerabilities: 0"
+          echo "High vulnerabilities: 0"
+          echo "Evidence generated for audit trail."
+      - name: Launch risk assessment
+        id: launch-risk
+        uses: docker://alpine:3.20
+        run: |
+          echo "Evaluating launch risk..."
+          echo "LOW" > $CLOUDBEES_OUTPUTS/risk
+          echo "Risk: LOW"
+          echo "Reason: Digital, SAP, and fulfillment dependencies are explicitly gated."
+      - name: Publish quality evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # Quality, Security, and Launch Risk
+
+            ## Security
+            - Critical vulnerabilities: 0
+            - High vulnerabilities: 0
+            - Status: ${{ steps.security-check.outputs.status }}
+
+            ## Launch Risk
+            - Risk Level: ${{ steps.launch-risk.outputs.risk }}
+            - Primary Risk Controlled: Digital launch outrunning SAP inventory readiness
+            - Mitigation: SAP readiness and feature rollout gates
+  notify-release-war-room:
+    needs:
+      - create-win-now-release-record
+      - quality-and-security-checks
+    steps:
+      - name: Notify Nike release war room
+        uses: docker://alpine:3.20
+        run: |
+          echo "Mock Slack notification sent to #nike-win-now-release"
+          echo "Release issue: ${{ needs.create-win-now-release-record.outputs.issue-key }}"
+          echo "Launch risk: ${{ needs.quality-and-security-checks.outputs.launch-risk }}"
+      - name: Publish collaboration evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # Collaboration Evidence
+
+            War room notification sent.
+
+            **Channel:** #nike-win-now-release  
+            **Release:** ${{ needs.create-win-now-release-record.outputs.issue-key }}  
+            **Launch Risk:** ${{ needs.quality-and-security-checks.outputs.launch-risk }}
+  release-manager-approval:
+    needs:
+      - notify-release-war-room
+    timeout-minutes: 60
+    delegates: cloudbees-io/manual-approval/custom-job.yml@v1
+    with:
+      instructions: |
+        Confirm cross-functional readiness before SAP readiness gates execute.
+
+        Validate:
+        - Digital components are ready
+        - Security evidence is complete
+        - SAP Application Engineering is engaged
+        - Release war room is active
+      disallowLaunchByUser: false
+      approvers: ""
+      notifyAllEligibleUsers: false
+  sap-window-check:
+    needs:
+      - release-manager-approval
+    outputs:
+      sap-window-status: ${{ steps.sap-window.outputs.status }}
+    steps:
+      - name: Validate SAP release window
+        id: sap-window
+        uses: docker://alpine:3.20
+        run: |
+          echo "Checking SAP S/4 release window against business outage constraints..."
+          sleep 2
+          echo "APPROVED" > $CLOUDBEES_OUTPUTS/status
+          echo "SAP release window approved for ${{ inputs.release_window }}"
+      - name: Publish SAP release window evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # SAP Release Window Evidence
+
+            **Window:** ${{ inputs.release_window }}  
+            **Status:** ${{ steps.sap-window.outputs.status }}  
+            **Business Impact:** Controlled launch window with release manager oversight.
+  sap-clean-core:
+    needs:
+      - sap-window-check
+    outputs:
+      clean-core-status: ${{ steps.clean-core.outputs.status }}
+    steps:
+      - name: Validate SAP clean core policy
+        id: clean-core
+        uses: docker://alpine:3.20
+        run: |
+          echo "Validating SAP Clean Core policy for transport package..."
+          sleep 2
+          echo "PASSED" > $CLOUDBEES_OUTPUTS/status
+          echo "No unmanaged core modifications detected."
+      - name: Publish clean core evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # SAP Clean Core Evidence
+
+            **Policy Status:** ${{ steps.clean-core.outputs.status }}  
+            **Result:** SAP transport package complies with clean core governance.
+  inventory-check:
+    needs:
+      - sap-clean-core
+    outputs:
+      inventory-status: ${{ steps.inventory.outputs.status }}
+      inventory-sku-count: ${{ steps.inventory.outputs.sku-count }}
+    steps:
+      - name: Check SAP inventory readiness
+        id: inventory
+        uses: docker://alpine:3.20
+        run: |
+          echo "Querying mocked SAP S/4 inventory readiness API..."
+          sleep 3
+          echo "READY" > $CLOUDBEES_OUTPUTS/status
+          echo "12847" > $CLOUDBEES_OUTPUTS/sku-count
+          echo "Inventory readiness: READY"
+          echo "Launch SKUs available: 12847"
+      - name: Publish inventory readiness evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # Inventory Readiness Evidence
+
+            **Inventory Status:** ${{ steps.inventory.outputs.status }}  
+            **Launch SKU Count:** ${{ steps.inventory.outputs.sku-count }}  
+            **Control:** SNKRS rollout cannot proceed unless SAP inventory is ready.
+  sap-charm-xport:
+    needs:
+      - inventory-check
+    outputs:
+      charm-id: ${{ steps.charm.outputs.charm-id }}
+      transport-status: ${{ steps.charm.outputs.status }}
+    steps:
+      - name: Execute mocked SAP CHaRM transport
+        id: charm
+        uses: docker://alpine:3.20
+        run: |
+          echo "Executing SAP CHaRM transport..."
+          sleep 4
+          echo "CHARM-2026-0512" > $CLOUDBEES_OUTPUTS/charm-id
+          echo "COMPLETE" > $CLOUDBEES_OUTPUTS/status
+          echo "CHaRM transport complete: CHARM-2026-0512"
+      - name: Publish CHaRM evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # SAP CHaRM Transport Evidence
+
+            **CHaRM ID:** ${{ steps.charm.outputs.charm-id }}  
+            **Transport Status:** ${{ steps.charm.outputs.status }}  
+            **Governance:** Transport completion is captured before digital rollout begins.
+  inventory-unlock:
+    needs:
+      - sap-charm-xport
+    outputs:
+      unlock-status: ${{ steps.unlock.outputs.status }}
+    steps:
+      - name: Confirm SAP inventory unlock
+        id: unlock
+        uses: docker://alpine:3.20
+        run: |
+          echo "Confirming SAP inventory unlock after CHaRM transport..."
+          sleep 2
+          echo "UNLOCKED" > $CLOUDBEES_OUTPUTS/status
+          echo "SAP inventory is unlocked for digital launch."
+      - name: Publish inventory unlock evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # SAP Inventory Unlock Evidence
+
+            **Unlock Status:** ${{ steps.unlock.outputs.status }}  
+            **Business Control:** Consumer purchase flow is protected from inventory synchronization failure.
+  deploy-snkrs-to-qa:
+    needs:
+      - inventory-unlock
+    uses: cb-golden-demo-org/sd-hackers-app/.cloudbees/workflows/deployer.yaml
+    with:
+      manifest: ${{ inputs.manifest }}
+      environment: sd-hackers-qa
+    secrets: inherit
+    vars: inherit
+  enable-snkrs-flags-qa:
+    environment: sd-hackers-qa
+    needs:
+      - deploy-snkrs-to-qa
+    steps:
+      - name: Enable SNKRS launch experience in QA
+        uses: https://github.com/cloudbees-days/fm-update-flag
+        id: config-update
+        with:
+          token: ${{ secrets.UNIFY_TOKEN }}
+          org-id: e8854086-415f-4497-a717-522d5a8af4f8
+          application-name: sd-hackers-app
+          environment-name: sd-hackers-qa
+          flag-name: snkrs.limited.drop
+          use-org-as-app: false
+          flag-config: |
+            enabled: true
+            defaultValue: true
+      - name: Publish QA flag evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |-
+            # QA Feature Flag Evidence
+
+            **Flag:** snkrs.limited.drop  
+            **Environment:** QA  
+            **Update Success:** ${{ steps.config-update.outputs.success }}
+  validate-consumer-journey-qa:
+    environment: sd-hackers-qa
+    needs:
+      - enable-snkrs-flags-qa
+    outputs:
+      qa-status: ${{ steps.consumer-tests.outputs.status }}
+    steps:
+      - name: Validate consumer purchase journey
+        id: consumer-tests
+        uses: docker://node:22-alpine
+        run: |
+          echo "Testing SNKRS consumer journey against inventory-backed APIs..."
+          sleep 5
+          echo "PASSED" > $CLOUDBEES_OUTPUTS/status
+          echo "Tests passed: product browse, inventory availability, cart, checkout, confirmation"
+      - name: Publish consumer journey evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # QA Consumer Journey Evidence
+
+            **Status:** ${{ steps.consumer-tests.outputs.status }}
+
+            Validated:
+            - Product browse
+            - Inventory availability
+            - Cart
+            - Checkout
+            - Confirmation
+  qa-exit-criteria:
+    environment: sd-hackers-qa
+    needs:
+      - validate-consumer-journey-qa
+    outputs:
+      gate-status: ${{ steps.qa-gate.outputs.status }}
+    steps:
+      - name: Evaluate QA exit criteria
+        id: qa-gate
+        uses: docker://alpine:3.20
+        run: |
+          echo "Evaluating QA exit criteria..."
+          echo "PASSED" > $CLOUDBEES_OUTPUTS/status
+          echo "QA exit criteria passed."
+      - name: Publish QA exit criteria evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # QA Exit Criteria
+
+            **Gate Status:** ${{ steps.qa-gate.outputs.status }}  
+            **Decision:** Ready for launch rehearsal.
+  deploy-to-staging:
+    needs:
+      - qa-exit-criteria
+    uses: cb-golden-demo-org/sd-hackers-app/.cloudbees/workflows/deployer.yaml
+    with:
+      manifest: ${{ inputs.manifest }}
+      environment: sd-hackers-staging
+    secrets: inherit
+    vars: inherit
+  enable-snkrs-flags-staging:
+    environment: sd-hackers-staging
+    needs:
+      - deploy-to-staging
+    steps:
+      - name: Enable SNKRS launch experience in staging
+        uses: https://github.com/cloudbees-days/fm-update-flag
+        id: config-update
+        with:
+          token: ${{ secrets.UNIFY_TOKEN }}
+          org-id: e8854086-415f-4497-a717-522d5a8af4f8
+          application-name: sd-hackers-app
+          environment-name: sd-hackers-staging
+          flag-name: snkrs.limited.drop
+          use-org-as-app: false
+          flag-config: |
+            enabled: true
+            defaultValue: true
+      - name: Publish staging flag evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # Staging Feature Flag Evidence
+
+            **Flag:** snkrs.limited.drop  
+            **Environment:** Staging  
+            **Update Success:** ${{ steps.config-update.outputs.success }}
+  run-launch-rehearsal:
+    environment: sd-hackers-staging
+    needs:
+      - enable-snkrs-flags-staging
+    outputs:
+      rehearsal-status: ${{ steps.rehearsal.outputs.status }}
+      rollback-time: ${{ steps.rehearsal.outputs.rollback-time }}
+    steps:
+      - name: Run launch rehearsal
+        id: rehearsal
+        uses: docker://alpine:3.20
+        run: |
+          echo "Running launch rehearsal with digital, SAP, and fulfillment dependencies..."
+          sleep 5
+          echo "PASSED" > $CLOUDBEES_OUTPUTS/status
+          echo "45 seconds" > $CLOUDBEES_OUTPUTS/rollback-time
+          echo "Launch rehearsal passed. Rollback time: 45 seconds."
+      - name: Publish launch rehearsal evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # Launch Rehearsal Evidence
+
+            **Rehearsal Status:** ${{ steps.rehearsal.outputs.status }}  
+            **Rollback Time:** ${{ steps.rehearsal.outputs.rollback-time }}  
+            **Result:** Ready for production readiness review.
+  prod-ready-approval:
+    needs:
+      - run-launch-rehearsal
+    timeout-minutes: 60
+    delegates: cloudbees-io/manual-approval/custom-job.yml@v1
+    with:
+      instructions: |
+        Confirm production readiness for Nike Win Now launch.
+
+        Review:
+        - SAP inventory unlock evidence
+        - CHaRM transport evidence
+        - Launch rehearsal results
+        - Rollback plan
+        - War room coverage
+      disallowLaunchByUser: false
+      approvers: ""
+      notifyAllEligibleUsers: false
+  sn-change-approval:
+    needs:
+      - prod-ready-approval
+    uses: cb-golden-demo-org/sd-hackers-app/.cloudbees/workflows/sn-approval.yaml
+    secrets: inherit
+    vars: inherit
+  deploy-to-prod:
+    needs:
+      - sn-change-approval
+    uses: cb-golden-demo-org/sd-hackers-app/.cloudbees/workflows/deployer.yaml
+    with:
+      manifest: ${{ inputs.manifest }}
+      environment: sd-hackers-prod
+    secrets: inherit
+    vars: inherit
+  progressive-snkrs-rollout:
+    environment: sd-hackers-prod
+    needs:
+      - deploy-to-prod
+    outputs:
+      rollout-status: ${{ steps.rollout.outputs.status }}
+    steps:
+      - name: Progressive rollout - 1 percent
+        uses: https://github.com/cloudbees-days/fm-update-flag
+        id: rollout-1
+        with:
+          token: ${{ secrets.UNIFY_TOKEN }}
+          org-id: e8854086-415f-4497-a717-522d5a8af4f8
+          application-name: sd-hackers-app
+          environment-name: sd-hackers-prod
+          flag-name: snkrs.limited.drop
+          use-org-as-app: false
+          flag-config: |
+            enabled: true
+            defaultValue: false
+            targeting:
+              percentage: 1
+      - name: Monitor launch health at 1 percent
+        uses: docker://alpine:3.20
+        run: |
+          echo "Monitoring conversion, checkout errors, API latency, and inventory sync at 1%."
+          sleep 3
+          echo "Health OK."
+      - name: Progressive rollout - 5 percent
+        uses: https://github.com/cloudbees-days/fm-update-flag
+        id: rollout-5
+        with:
+          token: ${{ secrets.UNIFY_TOKEN }}
+          org-id: e8854086-415f-4497-a717-522d5a8af4f8
+          application-name: sd-hackers-app
+          environment-name: sd-hackers-prod
+          flag-name: snkrs.limited.drop
+          use-org-as-app: false
+          flag-config: |
+            enabled: true
+            defaultValue: false
+            targeting:
+              percentage: 5
+      - name: Monitor launch health at 5 percent
+        uses: docker://alpine:3.20
+        run: |
+          echo "Monitoring conversion, checkout errors, API latency, and inventory sync at 5%."
+          sleep 3
+          echo "Health OK."
+      - name: Progressive rollout complete
+        id: rollout
+        uses: docker://alpine:3.20
+        run: |
+          echo "CONTROLLED" > $CLOUDBEES_OUTPUTS/status
+          echo "Progressive rollout controlled through CloudBees Feature Management."
+      - name: Publish progressive rollout evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # Progressive Rollout Evidence
+
+            **Flag:** snkrs.limited.drop  
+            **Rollout Steps:** 1% → health check → 5% → health check  
+            **Status:** ${{ steps.rollout.outputs.status }}
+
+            This demonstrates how Nike can replace manual launch scripts and reduce LaunchDarkly dependency with CloudBees Feature Management.
+  launch-health-check:
+    environment: sd-hackers-prod
+    needs:
+      - progressive-snkrs-rollout
+    outputs:
+      health-status: ${{ steps.health.outputs.status }}
+    steps:
+      - name: Validate launch critical path
+        id: health
+        uses: docker://alpine:3.20
+        run: |
+          echo "Validating production critical path..."
+          sleep 4
+          echo "HEALTHY" > $CLOUDBEES_OUTPUTS/status
+          echo "SNKRS web: UP"
+          echo "Inventory API: UP"
+          echo "SAP inventory sync: OK"
+          echo "Checkout: PASS"
+          echo "Order confirmation: PASS"
+      - name: Publish production validation evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # Production Launch Validation
+
+            **Overall Status:** ${{ steps.health.outputs.status }}
+
+            Validated:
+            - SNKRS web/mobile experience
+            - Inventory API
+            - SAP inventory sync
+            - Checkout
+            - Order confirmation
+  launch-retro:
+    needs:
+      - launch-health-check
+      - progressive-snkrs-rollout
+    steps:
+      - name: Publish launch retrospective
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            # Nike Win Now Launch Retrospective
+
+            ## Outcome
+            - Production health: ${{ needs.launch-health-check.outputs.health-status }}
+            - Rollout control: ${{ needs.progressive-snkrs-rollout.outputs.rollout-status }}
+
+            ## What CloudBees Proved
+            - Complex cross-team release orchestration
+            - SAP readiness gates before consumer rollout
+            - Enterprise change approval integration
+            - Feature Management progressive rollout
+            - Audit-ready evidence across every stage
+
+            ## Recommended POV Scope
+            Use one real Nike release candidate with:
+            - One digital application
+            - One SAP/S4 dependency
+            - One ServiceNow change
+            - One Slack/Email notification path
+            - One feature flag rollout
