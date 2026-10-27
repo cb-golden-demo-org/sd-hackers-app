@@ -13,6 +13,7 @@ metadata:
     - name: Dev
       jobs:
         - deploy-to-dev
+        - Scan
     - name: Release Readiness
       jobs:
         - create-release-issue
@@ -66,7 +67,7 @@ jobs:
             **Release Issue:** ${{ steps.create-release-issue.outputs.issue-key }}
             **URL:** ${{ steps.create-release-issue.outputs.issue-url }}
           format: MARKDOWN
-    needs: deploy-to-dev
+    needs: Scan
   gather-evidence:
     needs: create-release-issue
     outputs:
@@ -1023,3 +1024,17 @@ jobs:
         kind: deploy
         with:
           artifact-id: ${{ fromJSON(inputs.manifest)['sd-hackers-web']['hackers-web'].id }}
+  Scan:
+    needs: deploy-to-dev
+    steps:
+      - with:
+          provider: GitHub
+          repository: cb-golden-demo-org/sd-hackers-web
+          ref: main
+        uses: cloudbees-io/checkout@v1
+        name: Checkout
+      - name: Sonar
+        kind: scan
+        uses: cloudbees-io/sonarqube-bundled-sast-scan-code@v2
+        with:
+          language: JAVASCRIPT
